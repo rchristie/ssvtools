@@ -4,6 +4,7 @@ including trunk information, branch positions and orientations, and level marker
 """
 from cmlibs.maths.vectorops import normalize
 from cmlibs.utils.zinc.field import get_group_list
+from cmlibs.utils.zinc.general import ChangeManager
 from cmlibs.zinc.field import Field
 from cmlibs.zinc.fieldmodule import Fieldmodule
 import logging
@@ -132,3 +133,50 @@ def evaluate_branch_start_coordinates(coordinate_field: Field, branch_group_name
         direction = normalize(start_d1)
         branch_start_coordinates.append((branch_group_name, start_x, direction))
     return branch_start_coordinates
+
+def get_marker_data(fieldmodule, host_coordinate_field=None):
+    """
+    Get the list of vagus level marker points down the trunk, in order from top to bottom.
+    :param fieldmodule: 
+    :param host_coordinate_field: Optional host coordianates to evaluated e.g. straight coordinates
+    or coordinates; vagus coordinates are already known to the markers.
+    :return: List of (marker name, marker location (element number, [element local coordinates 1, 2, 3]),
+                      marker vagus coordinates [, optional host coordinates])
+    """
+    marker_group = fieldmodule.findFieldByName("marker").castGroup()
+    nodes = fieldmodule.findNodesetByFieldDomainType(Field.DOMAIN_TYPE_NODES)
+    marker_nodeset_group = marker_group.getNodesetGroup(nodes)
+    if marker_nodeset_group.getSize() <= 0:
+        logger.warning('get_marker_data: No level markers')
+        return []
+    # Zinc is an interactive system which notifies clients of changes to fields etc.
+    # The following caches multiple changes to minimise expensive messaging
+    marker_data = []
+    with ChangeManager(fieldmodule):
+        marker_name = fieldmodule.findFieldByName("marker_name")
+        marker_location = fieldmodule.findFieldByName("marker_location")
+        # markers store their vagus coordinates in a separate field from the scaffold presently
+        marker_vagus_coordinates = fieldmodule.findFieldByName("marker vagus coordinates")
+        # a common idiom in Zinc is to use its rich field operators to make fields returning the values we want
+        # here we evaluate the host field at the location stored at the marker
+        marker_host_coordinates = fieldmodule.createFieldEmbedded(
+            host_coordinate_field, marker_location) if host_coordinate_field else None
+        fieldcache = fieldmodule.createFieldcache()
+        nodeiterator = marker_nodeset_group.createNodeiterator()
+        node = nodeiterator.next()
+        while node.isValid():
+            fieldcache.setNode(node)
+            name = marker_name.evaluateString(fieldcache)
+            element, xi = marker_location.evaluateMeshLocation(fieldcache, 3)  # need to say 3 xi components expected
+            element_identifier = element.getIdentifier()
+            _, vagus_coordinates = marker_vagus_coordinates.evaluateReal(fieldcache, 3)
+            if marker_host_coordinates:
+                _, host_coordinates = marker_host_coordinates.evaluateReal(fieldcache, 3)
+                data = (name, (element_identifier, xi), vagus_coordinates, host_coordinates)
+            else:
+                data = (name, (element_identifier, xi), vagus_coordinates)
+            marker_data.append(data)
+            node = nodeiterator.next()
+        # by deleting the temporary field here, no clients will be notified of any change
+        del marker_host_coordinates
+    return marker_data
