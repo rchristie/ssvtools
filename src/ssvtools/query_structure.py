@@ -2,24 +2,25 @@
 Utility functions for querying structure of SPARC subject-specific nerve scaffolds,
 including trunk information, branch positions and orientations, and level marker locations.
 """
+import logging
+import re
+
 from cmlibs.maths.vectorops import normalize
 from cmlibs.utils.zinc.field import get_group_list
 from cmlibs.utils.zinc.general import ChangeManager
 from cmlibs.zinc.field import Field
 from cmlibs.zinc.fieldmodule import Fieldmodule
-import logging
-import re
 
 
 logger = logging.getLogger(__name__)
 
 
 # following keyword is present in names of all annotations marking part of the trunk
-trunk_keyword = 'vagus nerve'
+TRUNK_KEYWORD = 'vagus nerve'
 # exception for branches containing the following text:
-non_trunk_keyword = 'of vagus nerve'
+NON_TRUNK_KEYWORD = 'of vagus nerve'
 # following keywords are part of names of all annotations marking branches (without trunk_keywords)
-branch_keywords = ['branch', 'nerve']
+BRANCH_KEYWORDS = ['branch', 'nerve']
 
 
 def get_vagus_trunk_group(fieldmodule: Fieldmodule):
@@ -29,7 +30,7 @@ def get_vagus_trunk_group(fieldmodule: Fieldmodule):
     :return: Zinc Group for left/right vagus nerve or None if none.
     """
     for side in ('left', 'right'):
-        group_name = side + ' ' + trunk_keyword
+        group_name = side + ' ' + TRUNK_KEYWORD
         # a group contains a set of model objects (elements, nodes), but is also
         # a field returning True at any location inside those parts, False outside.
         group = fieldmodule.findFieldByName(group_name).castGroup()
@@ -79,10 +80,10 @@ def get_vagus_structure_maps(fieldmodule: Fieldmodule):
         if common_group_map.get(group_name):
             continue
         # exclude trunk groups
-        if (trunk_keyword in group_name) and not (non_trunk_keyword in group_name):
+        if (TRUNK_KEYWORD in group_name) and not (NON_TRUNK_KEYWORD in group_name):
             continue
         # exclude non-matches to branch keywords
-        if not any(branch_keyword in group_name for branch_keyword in branch_keywords):
+        if not any(branch_keyword in group_name for branch_keyword in BRANCH_KEYWORDS):
             continue
         # exclude groups with no 3-D elements
         if group.getMeshGroup(mesh3d).getSize() <= 0:
@@ -98,7 +99,6 @@ def get_vagus_structure_maps(fieldmodule: Fieldmodule):
         element = group.getMeshGroup(mesh3d).createElementiterator().next()
         eft = element.getElementfieldtemplate(coordinates, -1)
         node = element.getNode(eft, 1)
-        parent_group_name = None
         for compare_group_name, compare_nodeset_group in group_nodeset_map.items():
             if compare_group_name == group_name:
                 continue
@@ -133,6 +133,7 @@ def evaluate_branch_start_coordinates(coordinate_field: Field, branch_group_name
         direction = normalize(start_d1)
         branch_start_coordinates.append((branch_group_name, start_x, direction))
     return branch_start_coordinates
+
 
 def get_marker_data(fieldmodule, host_coordinate_field=None):
     """
